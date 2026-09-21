@@ -1,0 +1,14 @@
+{
+  "open3d.zip": {
+    "url": "https://github.com/isl-org/Open3D/releases/download/v0.19.0/open3d-devel-windows-amd64-0.19.0.zip",
+    "sha256": "a39a205e4d9db029e2a98313acae20d8cc8e3f60f89437ee4f3f00cdc231dc87"
+  },
+  "bazel.exe": {
+    "url": "https://releases.bazel.build/6.1.1/release/bazel-6.1.1-windows-x86_64.exe",
+    "sha256": "1d997d344936a1d98784ae58db1152d083569556f85cd845e6e340ee855357f9"
+  },
+  "mediapipe.zip": {
+    "url": "https://codeload.github.com/google-ai-edge/mediapipe/zip/refs/tags/v0.10.9",
+    "sha256": "5ab08e246d12a8ebcb618de0c8eccf3b8d50f21177eef683ad3428e383011904"
+  }
+}
