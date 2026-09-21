@@ -1,0 +1,76 @@
+{
+  "camera": {
+    "index": 0,
+    "width": 640,
+    "height": 480,
+    "mirror": false
+  },
+  "detector": {
+    "model_complexity": 0,
+    "max_hands": 2,
+    "xnnpack_threads": 16,
+    "min_detection_confidence": 0.5,
+    "min_tracking_confidence": 0.6
+  },
+  "mano": {
+    "executor": "thread",
+    "jacobian_workers": 4,
+    "jacobian_backend": "thread",
+    "iterations": 3,
+    "pose_smoothing": 0.7
+  },
+  "tracking": {
+    "handedness_confirm_frames": 10,
+    "handedness_map": "auto",
+    "position_filter": {
+      "min_cutoff": 3.0,
+      "beta": 0.02,
+      "median_window": 3,
+      "max_speed": 1500.0,
+      "derivative_cutoff": 2.0
+    }
+  },
+  "depth_estimation": {
+    "enabled": true,
+    "reference_depth": 200.0,
+    "minimum_depth": 10.0,
+    "maximum_depth": 600.0,
+    "calibration_frames": 30,
+    "min_cutoff": 1.0,
+    "beta": 0.02,
+    "max_speed": 500.0,
+    "motion_gain": 1.5
+  },
+  "viewer": {
+    "initial_view": "front",
+    "window_name": "MediaPipe Mano Interaction"
+  },
+  "pinch": {
+    "enter_distance": 0.045,
+    "exit_distance": 0.055,
+    "grab_tolerance": 8.0,
+    "missing_timeout": 0.18
+  },
+  "button": {
+    "center": [
+      -150.0,
+      0.0,
+      350.0
+    ],
+    "width": 90.0,
+    "height": 60.0,
+    "travel": 20.0,
+    "tip_radius": 10.0
+  },
+  "ball": {
+    "radius": 50.0,
+    "center": [
+      150.0,
+      0.0,
+      250.0
+    ],
+    "minimum_scale": 0.35,
+    "maximum_scale": 8.0,
+    "scale_sensitivity": 0.8
+  }
+}

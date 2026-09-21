@@ -1,0 +1,8 @@
+{
+  "detector": {
+    "xnnpack_threads": 4
+  },
+  "mano": {
+    "jacobian_workers": 4
+  }
+}
