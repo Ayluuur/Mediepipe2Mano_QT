@@ -1,0 +1,35 @@
+# CMake、Bazel 与 IDE 生成目录
+/build/
+/out/
+/bazel-cache/
+/CMakeFiles/
+/CMakeCache.txt
+/.vs/
+/.vscode/
+*.user
+*.user.*
+
+# 可下载的第三方依赖与编译生成的运行文件
+/deps/
+/bin/
+/dependencies.installed.json
+
+# 由转换或准备脚本生成的模型和 MediaPipe 资源
+/assets/
+/models/
+
+# 由 Python 参考实现生成的测试夹具和基准结果
+/tests/reference.json
+/tests/sync_reference.json
+/tests/skeleton_reference.json
+/tests/benchmark_*.json
+/tests/parallelism_benchmark_*.json
+
+# 验证截图、录像、日志和部署记录
+/validation/
+*.log
+
+# Python 缓存与本地文档备份
+__pycache__/
+*.py[cod]
+README*.bak*
