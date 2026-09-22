@@ -22,7 +22,7 @@ for name,expected in snapshot['files'].items():
     if digest(source/name)!=expected:
         raise RuntimeError(f'Python source changed during synchronization: {name}')
 items={}
-for folder in ('src','configs','models','tests','tools'):
+for folder in ('src','configs','models','tests','tools','docs'):
     for file in (root/folder).rglob('*'):
         if file.is_file() and '__pycache__' not in file.parts:
             items[file.relative_to(root).as_posix()]=file

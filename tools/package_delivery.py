@@ -6,7 +6,7 @@ import zipfile
 
 root=Path(__file__).resolve().parents[1]
 archive=root.parent/'Mediepipe2Mano_QT-delivery.zip'
-folders=['src','tools','tests','models','assets','configs','mediapipe_bridge','licenses','validation','bin']
+folders=['src','tools','tests','models','assets','configs','mediapipe_bridge','licenses','docs','validation','bin']
 files=['CMakeLists.txt','README.md','dependencies.lock.json','run_viewer.cmd','run_interaction.cmd',
        'run_parallel_ik.cmd','.gitignore']
 paths=[]
