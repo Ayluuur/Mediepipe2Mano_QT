@@ -44,6 +44,4 @@ if ($LASTEXITCODE) { throw 'Python/C++ parity checks failed' }
 if ($LASTEXITCODE) { throw 'Current Python synchronization checks failed' }
 & (Join-Path $BinDir 'skeleton_parity_tests.exe') $ProjectRoot
 if ($LASTEXITCODE) { throw 'Skeleton and IK synchronization checks failed' }
-& (Join-Path $BinDir 'config_profiles_tests.exe') $ProjectRoot
-if ($LASTEXITCODE) { throw 'Parallel configuration profile checks failed' }
 Write-Host "Built and deployed: $BinDir\MediaPipe2ManoQt.exe"

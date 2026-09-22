@@ -13,6 +13,8 @@ MediaPipe2Mano_QT/
 └─ ThirdParty/             Open3D、Bazel 等第三方开发依赖
 ```
 
+本地构建包可直接从第5节看起。
+
 ## 构建
 
 ### 1. 下载项目
@@ -85,17 +87,6 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 ### 5. 构建 Qt 程序
 
-脚本会编译程序、部署运行库并执行测试。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass `
-  -File .\tools\build.ps1 `
-  -QtRoot "path/to/Qt/6.8.3/msvc2022_64" `
-  -OpenCvRoot "path/to/opencv/build"
-```
-
-构建结果位于 `Bin`。
-
 生成 `CMakeUserPresets.json`：
 
 ```powershell
@@ -104,6 +95,19 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -QtRoot "path/to/Qt/6.8.3/msvc2022_64" `
   -OpenCvRoot "path/to/opencv/build"
 ```
+
+使用以下命令或者VS的生成解决方案进行构建
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\tools\build.ps1 `
+  -QtRoot "path/to/Qt/6.8.3/msvc2022_64" `
+  -OpenCvRoot "path/to/opencv/build"
+```
+脚本会编译程序、部署运行库并执行测试。
+脚本构建结果位于 `Bin`；生成解决方案构建结果位于 `out\build\local-vs2022-x64\Release`
+
+
 
 ## 运行
 
@@ -116,9 +120,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 也可以直接运行程序：
 
 ```powershell
-.\Bin\MediaPipe2ManoQt.exe --mode viewer
-.\Bin\MediaPipe2ManoQt.exe --mode interaction
-.\Bin\MediaPipe2ManoQt.exe --mode parallel_ik
+.\Bin\MediaPipe2ManoQt.exe 
 ```
 
 完整说明见[完整项目说明](docs/README_FULL.md)。

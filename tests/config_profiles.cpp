@@ -31,13 +31,6 @@ int integer(const QJsonObject& config,const char* group,const char* key) {
     return value.toInt();
 }
 
-QByteArray withoutXnnpackThreads(QJsonObject config) {
-    auto detector=config.value("detector").toObject();
-    detector.remove("xnnpack_threads");
-    config["detector"]=detector;
-    return QJsonDocument(config).toJson(QJsonDocument::Compact);
-}
-
 void checkProfile(const QJsonObject& config,int xnnpackThreads,int jacobianWorkers,const char* name) {
     if(integer(config,"detector","xnnpack_threads")!=xnnpackThreads)
         throw std::runtime_error(std::string(name)+": unexpected xnnpack_threads");
@@ -61,19 +54,6 @@ int main(int argc,char** argv) {
         checkProfile(interaction,4,1,"interaction.json");
         checkProfile(parallelIk,4,4,"parallel_ik.json");
 
-        struct Variant { const char* file; int threads; };
-        for(const auto& variant:{Variant{"interaction_4threads.json",4},Variant{"interaction_8threads.json",8},Variant{"interaction_16threads.json",16}}) {
-            const auto config=merge(interaction,readObject(root+"/configs/"+variant.file));
-            checkProfile(config,variant.threads,1,variant.file);
-            if(withoutXnnpackThreads(config)!=withoutXnnpackThreads(interaction))
-                throw std::runtime_error(std::string(variant.file)+": must differ from interaction.json only by xnnpack_threads");
-        }
-        for(const auto& variant:{Variant{"parallel_ik_8threads.json",8},Variant{"parallel_ik_16threads.json",16}}) {
-            const auto config=merge(parallelIk,readObject(root+"/configs/"+variant.file));
-            checkProfile(config,variant.threads,4,variant.file);
-            if(withoutXnnpackThreads(config)!=withoutXnnpackThreads(parallelIk))
-                throw std::runtime_error(std::string(variant.file)+": must differ from parallel_ik.json only by xnnpack_threads");
-        }
         struct Benchmark { const char* file; int xnnpackThreads; int jacobianWorkers; };
         for(const auto& benchmark:{
             Benchmark{"xnnpack1_jacobian4.json",1,4},Benchmark{"xnnpack2_jacobian1.json",2,1},

@@ -1,5 +1,0 @@
-{
-  "detector": {
-    "xnnpack_threads": 4
-  }
-}
