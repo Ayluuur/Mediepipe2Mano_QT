@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="RelWithDebInfo|x64"><Configuration>RelWithDebInfo</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{10000000-0000-0000-0000-000000000002}</ProjectGuid><Keyword>MakeFileProj</Keyword><RootNamespace>mano_core</RootNamespace></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Makefile</ConfigurationType><PlatformToolset>v143</PlatformToolset></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup><CMakeTarget>mano_core</CMakeTarget><CMakeOutputName>mano_core.lib</CMakeOutputName></PropertyGroup>
+  <Import Project="..\Common.CMake.props" />
+  <ItemGroup><ClCompile Include="..\..\core.cpp" /><ClCompile Include="..\..\skeleton.cpp" /></ItemGroup>
+  <ItemGroup><ClInclude Include="..\..\core.h" /><ClInclude Include="..\..\skeleton_json.h" /><ClInclude Include="..\..\worker.h" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

@@ -1,0 +1,5 @@
+{
+  "detector": {
+    "xnnpack_threads": 8
+  }
+}

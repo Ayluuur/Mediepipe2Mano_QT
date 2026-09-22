@@ -94,6 +94,7 @@ int main(int argc,char** argv) {
             near(model.keypoints,matrix(f["keypoints"]),1e-9,"tips-only keypoints");
             near(model.vertices,vertices,0,"tips-only preserves vertices");
         }
+        bool rateLimitTested=false;
         for(auto value:data["hands"].toArray()) {
             auto f=value.toObject(); bool left=f["side"].toString()=="left",mirrored=f["mirrored"].toBool();
             KeypointsToMano ik(path(left),left,5,1,f["n_pose"].toInt(),mirrored);
@@ -157,6 +158,18 @@ int main(int argc,char** argv) {
             near(hand.result->vertices,matrix(f["vertices"]),1e-4,"reacquired mesh");
             require(hand.resultVersion==2,"reacquired result increments update count");
             hand.deactivate(); require(!hand.getSkeleton(),"loss clears skeleton");
+            if(!rateLimitTested) {
+                HandState limited(path(left),left?0:1,5,1,{},mirrored);
+                limited.pending=world; require(limited.submit(10,120),"first rate-limited IK submits");
+                limited.future.wait(); limited.collect();
+                limited.pending=world; require(!limited.submit(10.001,200),"IK rate limit rejects early submit");
+                require(limited.pending.has_value(),"rate limit preserves latest pending frame");
+                require(limited.submit(10.009,120),"IK rate limit accepts due submit");
+                limited.future.wait(); limited.collect();
+                require(limited.ikSubmits==2 && limited.ikCompletes==2,"IK submit/complete counters");
+                require(limited.meanIkSeconds()>=.0082,"IK worker cycle respects 120 FPS limit");
+                rateLimitTested=true;
+            }
         }
         std::cout<<"PASS "<<checks<<" skeleton/FK/IK checks; max mesh error "<<worstMesh<<" mm\n";
         return 0;

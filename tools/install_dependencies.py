@@ -7,8 +7,8 @@ import urllib.request
 import zipfile
 
 root=Path(__file__).resolve().parents[1]
-deps=root/'deps'
-deps.mkdir(exist_ok=True)
+third_party=root/'ThirdParty'
+third_party.mkdir(exist_ok=True)
 assets=[
     ('open3d.zip','https://github.com/isl-org/Open3D/releases/download/v0.19.0/open3d-devel-windows-amd64-0.19.0.zip','open3d-devel-windows-amd64-0.19.0'),
     ('bazel.exe','https://releases.bazel.build/6.1.1/release/bazel-6.1.1-windows-x86_64.exe',None),
@@ -16,7 +16,7 @@ assets=[
 ]
 manifest={}
 for name,url,folder in assets:
-    path=deps/name
+    path=third_party/name
     if not path.exists():
         for attempt in range(3):
             try:
@@ -34,12 +34,12 @@ for name,url,folder in assets:
         if expected and expected!=digest:
             raise RuntimeError(f'Checksum mismatch: {path}')
     manifest[name]=dict(url=url,sha256=digest)
-    if folder and not (deps/folder).exists():
+    if folder and not (third_party/folder).exists():
         with zipfile.ZipFile(path) as archive:
             for member in archive.infolist():
-                destination=(deps/member.filename).resolve()
-                if deps.resolve() not in destination.parents and destination!=deps.resolve():
+                destination=(third_party/member.filename).resolve()
+                if third_party.resolve() not in destination.parents and destination!=third_party.resolve():
                     raise RuntimeError('Archive entry escapes dependency directory')
-            archive.extractall(deps)
+            archive.extractall(third_party)
     print(name,'ready',flush=True)
 (root/'dependencies.installed.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')

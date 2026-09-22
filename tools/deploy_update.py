@@ -22,15 +22,16 @@ for name,expected in snapshot['files'].items():
     if digest(source/name)!=expected:
         raise RuntimeError(f'Python source changed during synchronization: {name}')
 items={}
-for folder in ('src','configs','models','tests','tools','docs'):
+for folder in ('configs','models','tests','tools','docs'):
     for file in (root/folder).rglob('*'):
         if file.is_file() and '__pycache__' not in file.parts:
             items[file.relative_to(root).as_posix()]=file
-for name in ('README.md','CMakeLists.txt'):
+for name in ('README.md','CMakeLists.txt','main.cpp','application.cpp','application.h','core.cpp','core.h',
+             'detector.cpp','detector.h','skeleton.cpp','skeleton_json.h','worker.h'):
     items[name]=root/name
 for name in ('MediaPipe2ManoQt.exe','parity_tests.exe','sync_parity_tests.exe',
              'skeleton_parity_tests.exe','config_profiles_tests.exe'):
-    items['bin/'+name]=root/'build/Release'/name
+    items['Bin/'+name]=root/'build/Release'/name
 for file in (root/'validation').iterdir():
     if file.is_file() and file.name not in ('deploy_plan.json','deployment_receipt.json'):
         items['validation/sync-20260914/'+file.name]=file
@@ -46,6 +47,7 @@ for name,file in items.items():
                        previous_sha256=digest(destination) if destination.is_file() else None)
 plan=dict(target=str(target),python_commit=snapshot['commit'],changes=changes)
 plan_path=root/'validation/deploy_plan.json'
+plan_path.parent.mkdir(parents=True,exist_ok=True)
 if not args.apply:
     plan_path.write_text(json.dumps(plan,indent=2),encoding='utf-8')
     print(f'Reviewable update: {len(changes)} files, {sum(x["bytes"] for x in changes.values())} bytes')
@@ -67,5 +69,7 @@ else:
         if digest(destination)!=changes[name]['sha256']:
             raise RuntimeError(f'Deployed checksum mismatch: {name}')
     receipt=dict(backup=str(backup),files=len(changes),python_commit=snapshot['commit'])
-    (target/'validation/sync-20260914/deployment_receipt.json').write_text(json.dumps(receipt,indent=2),encoding='utf-8')
+    receipt_path=target/'validation/sync-20260914/deployment_receipt.json'
+    receipt_path.parent.mkdir(parents=True,exist_ok=True)
+    receipt_path.write_text(json.dumps(receipt,indent=2),encoding='utf-8')
     print(json.dumps(receipt))

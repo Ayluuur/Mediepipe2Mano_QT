@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <deque>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
@@ -155,11 +156,19 @@ void validateConfig(const QJsonObject& c,bool interaction) {
     boolean(c,"camera","mirror");
     integer("detector","model_complexity",0,1); integer("detector","max_hands",1,2);
     integer("detector","xnnpack_threads",1,64);
+    for(auto key:{"detector_fps","idle_detector_fps","render_fps","idle_render_fps"}) {
+        double n=number(c,"performance",key); require(n>0 && n<=1000,"Performance FPS limits must be in (0,1000]");
+    }
+    require(number(c,"performance","idle_detector_fps")<=number(c,"performance","detector_fps"),
+        "performance.idle_detector_fps must not exceed detector_fps");
+    require(number(c,"performance","idle_render_fps")<=number(c,"performance","render_fps"),
+        "performance.idle_render_fps must not exceed render_fps");
     for(auto key:{"min_detection_confidence","min_tracking_confidence"}) {
         double n=number(c,"detector",key); require(n>=0 && n<=1,"Detector confidence must be in [0,1]");
     }
     integer("mano","iterations",0,10000);
     integer("mano","jacobian_workers",0,45);
+    double manoMaxFps=number(c,"mano","max_fps"); require(manoMaxFps>0 && manoMaxFps<=1000,"mano.max_fps must be in (0,1000]");
     require(string(c,"mano","executor")=="thread", "Native Qt mano.executor must be thread");
     require(string(c,"mano","jacobian_backend")=="thread", "Native Qt mano.jacobian_backend must be thread");
     double smoothing=number(c,"mano","pose_smoothing"); require(smoothing>=0 && smoothing<=1,"Pose smoothing must be in [0,1]");
@@ -189,6 +198,11 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
     auto pconfig=positionConfig(c);
     const int xnnpackThreads=int(number(c,"detector","xnnpack_threads"));
     const int jacobianWorkers=int(number(c,"mano","jacobian_workers"));
+    const double manoMaxFps=number(c,"mano","max_fps");
+    const double detectorFps=number(c,"performance","detector_fps");
+    const double idleDetectorFps=number(c,"performance","idle_detector_fps");
+    const double renderFps=number(c,"performance","render_fps");
+    const double idleRenderFps=number(c,"performance","idle_render_fps");
     std::array<std::unique_ptr<HandState>,2> states;
     MultiHandDepthEstimator depthTracker(dconfig);
     auto& estimators=depthTracker.estimators;
@@ -252,6 +266,7 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
     if(interaction) {
         ballMesh=Mesh::CreateSphere(ball.baseRadius,28); ballMesh->ComputeVertexNormals(); ballMesh->PaintUniformColor(Vec3(.95,.72,.15));
         ballFrame=Mesh::CreateCoordinateFrame(ball.baseRadius*1.45,Vec3::Zero()); ballBase=ballMesh->vertices_; frameBase=ballFrame->vertices_;
+        transformMesh(*ballMesh,ballBase,ball); transformMesh(*ballFrame,frameBase,ball);
         visualizer.AddGeometry(ballMesh,false); visualizer.AddGeometry(ballFrame,false);
         auto box=[](double width,double height,double thickness) {
             auto mesh=Mesh::CreateBox(width,height,thickness);
@@ -264,10 +279,8 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
         buttonCap->Translate(button->capOffset()); buttonCap->PaintUniformColor(button->capColor());
         visualizer.AddGeometry(buttonBase,false); visualizer.AddGeometry(buttonCap,false);
     }
-    QElapsedTimer clock; clock.start(); double fps=0,fpsStarted=0; int fpsFrames=0,frames=0,nextSequence=1,detectedHands=0,meshFrames=0;
+    QElapsedTimer clock; clock.start(); int frames=0,nextSequence=1,detectedHands=0,meshFrames=0;
     std::array<unsigned long long,2> displayedVersions{};
-    std::array<int,2> manoFrames{};
-    std::array<double,2> manoFps{};
     std::deque<double> captureTimings,mediapipeTimings,mainRenderTimings;
     struct Benchmark {
         bool started=false;
@@ -290,7 +303,28 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
         cv::Mat frame; std::vector<Detection> raw; double timestamp=0;
         double captureSeconds=0,mediapipeSeconds=0;
     };
-    // Declared after camera/visualizer cleanup: joins before releasing either owner.
+    struct LiveRates {
+        double timer=0,detector=0,render=0;
+    } rates;
+    unsigned long long timerCallbacks=0,detectorFrames=0,renderFrames=0;
+    unsigned long long sampledTimer=0,sampledDetector=0,sampledRender=0;
+    double ratesStarted=0;
+    auto updateRates=[&](double now) {
+        double elapsed=now-ratesStarted;
+        if(elapsed<.5) return;
+        rates.timer=(timerCallbacks-sampledTimer)/elapsed;
+        rates.detector=(detectorFrames-sampledDetector)/elapsed;
+        rates.render=(renderFrames-sampledRender)/elapsed;
+        sampledTimer=timerCallbacks; sampledDetector=detectorFrames; sampledRender=renderFrames;
+        ratesStarted=now;
+    };
+    QEventLoop loop;
+    QObject deliveryContext;
+    std::exception_ptr failure;
+    bool stopping=false,renderDirty=true;
+    std::function<void(Packet)> processPacket;
+    std::function<void(bool)> scheduleCapture;
+    // Declared after notification state and before camera/visualizer cleanup is destroyed.
     Worker captureWorker;
     auto readPacket=[&] {
         Packet packet;
@@ -307,29 +341,20 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
             std::chrono::steady_clock::now()-mediapipeStarted).count();
         return packet;
     };
-    std::future<Packet> packetFuture;
-    if(!synthetic) packetFuture=captureWorker.submit(readPacket);
     auto requestCalibration=[&] { if(dconfig.enabled) depthTracker.requestCalibration(clock.nsecsElapsed()/1e9); };
-    visualizer.RegisterMouseScrollCallback([](Visualizer* vis,double,double y) { vis->GetViewControl().Scale(-y); return false; });
+    visualizer.RegisterMouseScrollCallback([&](Visualizer* vis,double,double y) { vis->GetViewControl().Scale(-y); renderDirty=true; return false; });
     for(int key:{257,335}) visualizer.RegisterKeyCallback(key,[&](Visualizer*) { requestCalibration(); return false; });
-    QEventLoop loop; QTimer timer; std::exception_ptr failure;
     QString cameraTitle=interaction?"Pinch Interaction":"MediaPipe Hands";
-    QObject::connect(&timer,&QTimer::timeout,[&] {
+    processPacket=[&](Packet packet) {
         try {
-            cv::Mat frame;
+            cv::Mat frame=std::move(packet.frame);
             if(synthetic) frame=cv::Mat::zeros(int(number(c,"camera","height")),int(number(c,"camera","width")),CV_8UC3);
+            else if(frame.empty()) { stopping=true; loop.quit(); return; }
             bool mirror=boolean(c,"camera","mirror");
-            double now=clock.nsecsElapsed()/1e9;
-            std::vector<Detection> raw;
+            double now=synthetic?clock.nsecsElapsed()/1e9:packet.timestamp;
+            std::vector<Detection> raw=std::move(packet.raw);
+            ++detectorFrames;
             if(!synthetic) {
-                if(packetFuture.wait_for(std::chrono::seconds(0))!=std::future_status::ready) {
-                    if(!visualizer.PollEvents()) loop.quit();
-                    if(!hidden && (cv::waitKey(1)&0xff)==27) loop.quit();
-                    return;
-                }
-                auto packet=packetFuture.get();
-                if(packet.frame.empty()) { loop.quit(); return; }
-                frame=std::move(packet.frame); raw=std::move(packet.raw); now=packet.timestamp;
                 if(benchmark.duration>0 && !benchmark.started && !raw.empty()) {
                     benchmark.started=true; benchmark.startedAt=clock.nsecsElapsed()/1e9;
                     benchmark.cpuStartedAt=processCpuSeconds();
@@ -347,7 +372,6 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
                     benchmark.mediapipeValues.push_back(packet.mediapipeSeconds);
                     benchmark.detections+=raw.size();
                 }
-                packetFuture=captureWorker.submit(readPacket);
             } else {
                 // Explicit synthetic render mode, never substituted for a live detector.
                 for(int side=0;side<2;++side) {
@@ -357,7 +381,6 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
                     state.lastSeen=now; depths[side]=dconfig.reference;
                 }
             }
-            auto mainStarted=std::chrono::steady_clock::now();
             QString mapping=string(c,"tracking","handedness_map");
             for(auto& d:raw) if(mapping=="swapped" || (mapping=="auto" && !mirror)) d.rawSide=1-d.rawSide;
             for(auto& s:states) s->collect();
@@ -416,9 +439,11 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
                 auto& s=*states[side];
                 if(!detections.count(side)) s.pending.reset();
                 if(interaction) pinches[side].expire(now);
-                s.submit();
+                s.submit(now,manoMaxFps);
             }
             if(interaction) {
+                Vec3 oldBallCenter=ball.center; Mat3 oldBallRotation=ball.rotation; double oldBallScale=ball.scale;
+                bool oldButtonPressed=button->pressed;
                 controller.update(pinches);
                 std::map<int,Vec3> tips;
                 for(const auto& [side,d]:detections) {
@@ -426,67 +451,63 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
                     if(s.result && s.displayWrist) tips[side]=scenePoints(s.result->keypoints,*s.displayWrist,depths[side],s.sceneTranslation).row(16).transpose();
                 }
                 button->update(tips);
-                for(size_t i=0;i<buttonCapVertices.size();++i) buttonCap->vertices_[i]=buttonCapVertices[i]+button->capOffset();
-                buttonCap->PaintUniformColor(button->capColor()); visualizer.UpdateGeometry(buttonCap);
-                transformMesh(*ballMesh,ballBase,ball); transformMesh(*ballFrame,frameBase,ball);
-                visualizer.UpdateGeometry(ballMesh); visualizer.UpdateGeometry(ballFrame);
+                if(oldButtonPressed!=button->pressed) {
+                    for(size_t i=0;i<buttonCapVertices.size();++i) buttonCap->vertices_[i]=buttonCapVertices[i]+button->capOffset();
+                    buttonCap->PaintUniformColor(button->capColor()); visualizer.UpdateGeometry(buttonCap); renderDirty=true;
+                }
+                if(oldBallScale!=ball.scale || !oldBallCenter.isApprox(ball.center) || !oldBallRotation.isApprox(ball.rotation)) {
+                    transformMesh(*ballMesh,ballBase,ball); transformMesh(*ballFrame,frameBase,ball);
+                    visualizer.UpdateGeometry(ballMesh); visualizer.UpdateGeometry(ballFrame); renderDirty=true;
+                }
                 for(int side=0;side<2;++side) {
                     auto& pinch=pinches[side];
                     if(pinch.pinching && pinch.point) {
                         Ball translation(1,Vec3::Zero()); translation.center=*pinch.point; transformMesh(*markers[side],markerBase[side],translation);
                         if(!markerAdded[side]) { visualizer.AddGeometry(markers[side],false); markerAdded[side]=true; }
-                        visualizer.UpdateGeometry(markers[side]);
-                    } else if(markerAdded[side]) { visualizer.RemoveGeometry(markers[side],false); markerAdded[side]=false; }
+                        visualizer.UpdateGeometry(markers[side]); renderDirty=true;
+                    } else if(markerAdded[side]) { visualizer.RemoveGeometry(markers[side],false); markerAdded[side]=false; renderDirty=true; }
                 }
             }
             for(int side=0;side<2;++side) {
                 auto& s=*states[side];
                 if(now-s.lastSeen<resolver.trackTimeout && s.result && s.displayWrist) {
                     ++meshFrames;
-                    if(s.resultVersion!=displayedVersions[side]) {
-                        ++manoFrames[side]; displayedVersions[side]=s.resultVersion;
+                    if(synthetic || detections.count(side) || s.resultVersion!=displayedVersions[side] || !meshAdded[side]) {
+                        displayedVersions[side]=s.resultVersion;
+                        setVertices(*meshes[side],scenePoints(s.result->vertices,*s.displayWrist,depths[side],s.sceneTranslation));
+                        if(!meshAdded[side]) { visualizer.AddGeometry(meshes[side],false); meshAdded[side]=true; }
+                        visualizer.UpdateGeometry(meshes[side]); renderDirty=true;
                     }
-                    setVertices(*meshes[side],scenePoints(s.result->vertices,*s.displayWrist,depths[side],s.sceneTranslation));
-                    if(!meshAdded[side]) { visualizer.AddGeometry(meshes[side],false); meshAdded[side]=true; }
-                    visualizer.UpdateGeometry(meshes[side]);
-                } else if(meshAdded[side]) { visualizer.RemoveGeometry(meshes[side],false); meshAdded[side]=false; }
+                } else if(meshAdded[side]) { visualizer.RemoveGeometry(meshes[side],false); meshAdded[side]=false; renderDirty=true; }
             }
-            if(!visualizer.PollEvents()) { loop.quit(); return; } visualizer.UpdateRender();
-            double renderSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-mainStarted).count();
-            recordTiming(mainRenderTimings,renderSeconds);
-            if(benchmark.started) { benchmark.renderTotal+=renderSeconds; ++benchmark.frames; }
-            ++fpsFrames; double wallNow=clock.nsecsElapsed()/1e9, elapsed=wallNow-fpsStarted;
-            if(elapsed>=.5) {
-                fps=fpsFrames/elapsed; fpsFrames=0; fpsStarted=wallNow;
-                for(int side=0;side<2;++side) { manoFps[side]=manoFrames[side]/elapsed; manoFrames[side]=0; }
-            }
-            QString rates=QString("MANO FPS L:%1 R:%2 | Capture/MP:%3")
-                .arg(manoFps[0],0,'f',1).arg(manoFps[1],0,'f',1).arg(fps,0,'f',1);
+            double wallNow=clock.nsecsElapsed()/1e9;
+            QString loopRates=QString("FPS Timer:%1 Detect:%2 Render:%3")
+                .arg(rates.timer,0,'f',1).arg(rates.detector,0,'f',1).arg(rates.render,0,'f',1);
             auto ikRate=[&](int side) {
                 auto& state=*states[side];
                 double seconds=state.meanIkSeconds();
                 if(now-state.lastSeen>=resolver.trackTimeout || !state.result || seconds<=0)
                     return QString("--");
-                return QString("%1 (%2ms)").arg(1/seconds,0,'f',1).arg(seconds*1000,0,'f',1);
+                return QString("%1/%2 (%3ms)").arg(1/seconds,0,'f',1)
+                    .arg(manoMaxFps,0,'g',6).arg(seconds*1000,0,'f',2);
             };
-            QString ikRates=QString("IK compute FPS L:%1 R:%2").arg(ikRate(0),ikRate(1));
-            QString timings=QString("Time ms Capture:%1 MediaPipe:%2 Main/render:%3")
+            QString ikRates=QString("IK solve/max FPS L:%1 R:%2").arg(ikRate(0),ikRate(1));
+            QString timings=QString("Time ms Capture:%1 MediaPipe:%2 Render:%3")
                 .arg(meanMs(captureTimings),0,'f',1).arg(meanMs(mediapipeTimings),0,'f',1)
-                .arg(meanMs(mainRenderTimings),0,'f',1);
+                .arg(meanMs(mainRenderTimings),0,'f',2);
             int ikBaseline=0;
             double ikScale=std::min(.58,.58*(frame.cols-24)/
                 cv::getTextSize(ikRates.toStdString(),cv::FONT_HERSHEY_SIMPLEX,.58,2,&ikBaseline).width);
             text(frame,ikRates,{12,28},ikScale,{80,255,255},1);
             int baselinePixels=0;
             double rateScale=std::min(.58,.58*(frame.cols-24)/
-                cv::getTextSize(rates.toStdString(),cv::FONT_HERSHEY_SIMPLEX,.58,2,&baselinePixels).width);
+                cv::getTextSize(loopRates.toStdString(),cv::FONT_HERSHEY_SIMPLEX,.58,2,&baselinePixels).width);
             if(interaction) {
-                text(frame,rates,{12,52},rateScale,{80,255,80},1);
+                text(frame,loopRates,{12,52},rateScale,{80,255,80},1);
                 text(frame,timings,{12,76},.48,{255,210,80},1);
                 text(frame,QString("Ball scale %1x  [1 front / 3 depth]").arg(ball.scale,0,'f',2),{12,102},.52,{220,220,220},1);
-                text(frame,QString("Input flip: %1  label map: %2").arg(mirror?"ON":"OFF",mapping.toUpper()),{12,126},.48,{220,220,220},1);
             } else {
-                text(frame,rates,{12,52},rateScale,{80,255,80},1);
+                text(frame,loopRates,{12,52},rateScale,{80,255,80},1);
                 text(frame,timings,{12,76},.48,{255,210,80},1);
                 text(frame,QString("Open3D view: %1  [1 front / 3 depth]").arg(viewMode.toUpper()),{12,102},.52,{210,210,210},1);
             }
@@ -499,25 +520,80 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
                     status="PRESSED "+names.join('/');
                 }
                 text(frame,QString("Button: %1  presses: %2").arg(status).arg(button->pressCount),
-                    {12,150},.52,button->pressed?cv::Scalar(80,255,80):cv::Scalar(220,220,220),2);
+                    {12,126},.52,button->pressed?cv::Scalar(80,255,80):cv::Scalar(220,220,220),2);
             }
             int key=-1;
             if(!synthetic && !hidden) { cv::imshow(cameraTitle.toStdString(),frame); key=cv::waitKey(1)&0xff; }
             if(key==10 || key==13) requestCalibration();
-            if(key=='1' || key=='3') { viewMode=key=='1'?"front":"depth"; configureView(visualizer,viewMode); }
-            if(key=='q' || key==27) loop.quit();
+            if(key=='1' || key=='3') { viewMode=key=='1'?"front":"depth"; configureView(visualizer,viewMode); renderDirty=true; }
+            if(key=='q' || key==27) { stopping=true; loop.quit(); }
             ++frames;
+            if(benchmark.started) ++benchmark.frames;
             if(maximumFrames>0 && frames>=maximumFrames) {
+                if(renderDirty) { visualizer.UpdateRender(); renderDirty=false; }
                 if(!capturePath.isEmpty()) {
                     visualizer.CaptureScreenImage(capturePath.toStdString(),true);
                     cv::imwrite((capturePath+".camera.png").toStdString(),frame);
                 }
-                loop.quit();
+                stopping=true; loop.quit();
             }
-            if(benchmark.started && wallNow-benchmark.startedAt>=benchmark.duration) loop.quit();
-        } catch(...) { failure=std::current_exception(); loop.quit(); }
+            if(benchmark.started && wallNow-benchmark.startedAt>=benchmark.duration) { stopping=true; loop.quit(); }
+            bool active=!raw.empty();
+            for(const auto& state:states) if(now-state->lastSeen<resolver.trackTimeout) active=true;
+            if(!stopping) scheduleCapture(active);
+        } catch(...) { failure=std::current_exception(); stopping=true; loop.quit(); }
+    };
+    double nextDetectorAt=0;
+    std::optional<bool> lastDetectorActive;
+    scheduleCapture=[&](bool active) {
+        if(stopping) return;
+        double now=clock.nsecsElapsed()/1e9;
+        if(lastDetectorActive && *lastDetectorActive!=active) nextDetectorAt=now;
+        lastDetectorActive=active;
+        int delayMs=int(std::ceil(std::max(0.,nextDetectorAt-now)*1000));
+        double fpsLimit=active?detectorFps:idleDetectorFps;
+        QTimer::singleShot(delayMs,&deliveryContext,[&,fpsLimit] {
+            if(stopping) return;
+            nextDetectorAt=clock.nsecsElapsed()/1e9+1/fpsLimit;
+            if(synthetic) { Packet packet; packet.timestamp=clock.nsecsElapsed()/1e9; processPacket(std::move(packet)); return; }
+            captureWorker.submit([&] {
+                try {
+                    Packet packet=readPacket();
+                    QMetaObject::invokeMethod(&deliveryContext,[&,packet=std::move(packet)]() mutable {
+                        if(!stopping) processPacket(std::move(packet));
+                    },Qt::QueuedConnection);
+                } catch(...) {
+                    auto error=std::current_exception();
+                    QMetaObject::invokeMethod(&deliveryContext,[&,error] {
+                        failure=error; stopping=true; loop.quit();
+                    },Qt::QueuedConnection);
+                }
+            });
+        });
+    };
+    QTimer renderTimer;
+    QObject::connect(&renderTimer,&QTimer::timeout,[&] {
+        ++timerCallbacks;
+        double now=clock.nsecsElapsed()/1e9;
+        updateRates(now);
+        bool active=false;
+        for(const auto& state:states) if(now-state->lastSeen<resolver.trackTimeout) active=true;
+        int interval=std::max(1,int(std::round(1000/(active?renderFps:idleRenderFps))));
+        if(renderTimer.interval()!=interval) renderTimer.setInterval(interval);
+        bool rendering=renderDirty;
+        auto renderStarted=std::chrono::steady_clock::now();
+        if(rendering) visualizer.UpdateRender();
+        if(!visualizer.PollEvents()) { stopping=true; loop.quit(); return; }
+        if(rendering) {
+            renderDirty=false; ++renderFrames;
+            double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-renderStarted).count();
+            recordTiming(mainRenderTimings,seconds);
+            if(benchmark.started) benchmark.renderTotal+=seconds;
+        }
     });
-    timer.start(1); loop.exec(); timer.stop();
+    scheduleCapture(false);
+    renderTimer.start(std::max(1,int(std::round(1000/idleRenderFps))));
+    loop.exec(); stopping=true; renderTimer.stop();
     if(failure) std::rethrow_exception(failure);
     if(benchmark.duration>0) {
         if(!benchmark.started) throw std::runtime_error("Benchmark ended before a hand was detected");
@@ -545,6 +621,9 @@ int runApplication(const QString& root,const QJsonObject& c,bool interaction,int
     }
     std::cout<<"Completed "<<frames<<" frames"<<(synthetic?" (synthetic render test)":"")
         <<"; hand detections="<<detectedHands<<"; rendered hand snapshots="<<meshFrames
+        <<"; timer callbacks="<<timerCallbacks<<" detector frames="<<detectorFrames<<" Open3D renders="<<renderFrames
+        <<"; IK submits L="<<states[0]->ikSubmits<<" R="<<states[1]->ikSubmits
+        <<" completes L="<<states[0]->ikCompletes<<" R="<<states[1]->ikCompletes
         <<"; accepted MANO results L="<<states[0]->resultVersion<<" R="<<states[1]->resultVersion
         <<"; XNNPACK threads/inference node="<<xnnpackThreads
         <<"; Jacobian workers/hand="<<jacobianWorkers

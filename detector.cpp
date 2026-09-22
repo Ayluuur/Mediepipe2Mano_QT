@@ -7,7 +7,7 @@ namespace m2m {
 Detector::Detector(const QString& root,int complexity,int maxHands,int xnnpackThreads,
                    double detection,double tracking) {
     QString path=QCoreApplication::applicationDirPath()+"/mediapipe_hands.dll";
-    if(!QFileInfo::exists(path)) path=root+"/bin/mediapipe_hands.dll";
+    if(!QFileInfo::exists(path)) path=root+"/Bin/mediapipe_hands.dll";
     library.setFileName(path);
     if(!library.load()) throw std::runtime_error(("Native MediaPipe DLL is unavailable. Run tools/build_mediapipe.ps1.\n"+library.errorString()).toStdString());
     auto create=reinterpret_cast<decltype(&m2m_create)>(library.resolve("m2m_create"));

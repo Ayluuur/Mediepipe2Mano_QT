@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="Local.Paths.props" Condition="Exists('Local.Paths.props')" />
+  <PropertyGroup>
+    <ProjectRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</ProjectRoot>
+    <CMakeBuildPreset Condition="'$(Configuration)'=='Release'">local-release</CMakeBuildPreset>
+    <CMakeBuildPreset Condition="'$(Configuration)'=='RelWithDebInfo'">local-relwithdebinfo</CMakeBuildPreset>
+    <NMakeBuildCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectRoot)tools\vs_build_target.ps1" -Target "$(CMakeTarget)" -Configuration "$(Configuration)"</NMakeBuildCommandLine>
+    <NMakeReBuildCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectRoot)tools\vs_build_target.ps1" -Target "$(CMakeTarget)" -Configuration "$(Configuration)" -Rebuild</NMakeReBuildCommandLine>
+    <NMakeCleanCommandLine>powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(ProjectRoot)tools\vs_build_target.ps1" -Target "$(CMakeTarget)" -Configuration "$(Configuration)" -Clean</NMakeCleanCommandLine>
+    <NMakeOutput Condition="'$(CMakeOutputName)'!=''">$(ProjectRoot)out\build\local-vs2022-x64\$(Configuration)\$(CMakeOutputName)</NMakeOutput>
+    <NMakeIncludeSearchPath>$(ProjectRoot);$(ProjectRoot)mediapipe_bridge;$(QtRoot)\include;$(OpenCvRoot)\include;$(Open3DRoot)\include;$(NMakeIncludeSearchPath)</NMakeIncludeSearchPath>
+    <NMakePreprocessorDefinitions>NOMINMAX;_WIN64;WIN32;$(NMakePreprocessorDefinitions)</NMakePreprocessorDefinitions>
+  </PropertyGroup>
+</Project>

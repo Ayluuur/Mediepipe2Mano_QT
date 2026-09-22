@@ -541,12 +541,14 @@ HandState::HandState(const std::string& model,int side,int iterations,double smo
     sceneReferenceKeypoints(converter.model.keypoints) {}
 void HandState::beginTrack() {
     ikTimings.clear();
+    nextIkSubmitAt=-inf;
     sceneMmPerPixel.reset(); scenePositionFilter.reset(); sceneTranslation.reset();
     filter.reset(); positionFilter.reset(); result.reset();
     if(!future.valid()) converter.reset(); else discard=true;
 }
 void HandState::deactivate() {
     ikTimings.clear();
+    nextIkSubmitAt=-inf;
     sceneMmPerPixel.reset(); scenePositionFilter.reset(); sceneTranslation.reset();
     lastSeen=-inf; screenWrist.reset(); displayWrist.reset(); pending.reset(); result.reset();
     candidate=-1; candidateFrames=0; filter.reset(); positionFilter.reset();
@@ -558,8 +560,9 @@ Matrix HandState::update(const Detection& d,double time) {
     Matrix wrist(1,2); wrist.row(0)=d.wrist().transpose(); displayWrist=positionFilter(wrist,time).row(0).transpose();
     return filtered;
 }
-void HandState::collect() {
-    if(!future.valid() || future.wait_for(std::chrono::seconds(0))!=std::future_status::ready) return;
+bool HandState::collect() {
+    if(!future.valid() || future.wait_for(std::chrono::seconds(0))!=std::future_status::ready) return false;
+    ++ikCompletes;
     try { auto snapshot=future.get(); if(!discard) {
         if(std::isfinite(snapshot.ikSeconds) && snapshot.ikSeconds>0) {
             ikTimings.push_back(snapshot.ikSeconds);
@@ -570,6 +573,7 @@ void HandState::collect() {
     catch(const std::exception& e) { std::cerr << (side==0?"left":"right") << " hand IK failed: " << e.what() << '\n'; }
     if(discard) converter.reset();
     discard=false;
+    return true;
 }
 std::optional<SkeletonPose> HandState::getSkeleton(const std::string& space) const {
     if(space!="camera" && space!="scene") throw std::invalid_argument("Expected camera or scene space");
@@ -578,15 +582,25 @@ std::optional<SkeletonPose> HandState::getSkeleton(const std::string& space) con
     if(!sceneTranslation) return std::nullopt;
     return result->skeleton.toScene(*sceneTranslation);
 }
-void HandState::submit() {
-    if(future.valid() || !pending) return;
+bool HandState::submit(double time,double maxFps) {
+    if(future.valid() || !pending) return false;
+    if(maxFps>0 && time<nextIkSubmitAt) return false;
     Matrix latest=std::move(*pending); pending.reset();
-    future=solverWorker.submit([this,latest=std::move(latest)] {
+    if(maxFps>0) nextIkSubmitAt=time+1/maxFps;
+    ++ikSubmits;
+    double minimumCycleSeconds=maxFps>0?1/maxFps:0;
+    future=solverWorker.submit([this,latest=std::move(latest),minimumCycleSeconds] {
         auto start=std::chrono::steady_clock::now();
         converter.solve(latest);
+        if(minimumCycleSeconds>0) {
+            auto minimumCycle=std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                std::chrono::duration<double>(minimumCycleSeconds));
+            std::this_thread::sleep_until(start+minimumCycle);
+        }
         double seconds=std::chrono::duration<double>(std::chrono::steady_clock::now()-start).count();
         auto snapshot=converter.cameraOriented(); snapshot.ikSeconds=seconds; return snapshot;
     });
+    return true;
 }
 void HandState::updateScenePosition(const Detection& d,double depth,int width,int height,double time,std::optional<double> mmPerPixel) {
     if(!result) return;

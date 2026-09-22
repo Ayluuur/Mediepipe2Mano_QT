@@ -127,5 +127,6 @@ for i in range(60):
 paths=list((source/'mediapipe2mesh').rglob('*.py'))+list((source/'inverse_kinematics').glob('*.py'))+list((source/'configs').glob('*.json'))
 manifest=dict(commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=source,text=True).strip(),
     files={str(p.relative_to(source)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest() for p in paths})
+(output/'validation').mkdir(parents=True,exist_ok=True)
 (output/'validation/python_source_snapshot.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
 print('Exported current Python differential fixtures and source hashes.')

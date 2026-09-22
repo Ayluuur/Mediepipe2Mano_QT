@@ -43,6 +43,11 @@ void checkProfile(const QJsonObject& config,int xnnpackThreads,int jacobianWorke
         throw std::runtime_error(std::string(name)+": unexpected xnnpack_threads");
     if(integer(config,"mano","jacobian_workers")!=jacobianWorkers)
         throw std::runtime_error(std::string(name)+": unexpected jacobian_workers");
+    if(integer(config,"mano","max_fps")!=60)
+        throw std::runtime_error(std::string(name)+": unexpected mano.max_fps");
+    if(integer(config,"performance","detector_fps")!=120 || integer(config,"performance","idle_detector_fps")!=15 ||
+       integer(config,"performance","render_fps")!=120 || integer(config,"performance","idle_render_fps")!=15)
+        throw std::runtime_error(std::string(name)+": unexpected performance FPS limits");
 }
 }
 

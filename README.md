@@ -1,5 +1,18 @@
 # MediaPipe2Mano Qt
 
+## 目录结构
+
+```text
+MediaPipe2Mano_QT/
+├─ assets/、models/        运行资源和 MANO 模型
+├─ Bin/                    可执行文件及运行时 DLL
+├─ configs/                运行配置
+├─ mediapipe_bridge/       MediaPipe C ABI 桥接项目
+├─ tests/                  独立测试项目源码
+├─ tools/                  配置、构建和交付脚本
+└─ ThirdParty/             Open3D、Bazel 等第三方开发依赖
+```
+
 ## 构建
 
 ### 1. 下载项目
@@ -42,7 +55,7 @@ git clone --branch feature/mano-interaction --single-branch `
 以下工具会把 MANO 模型和测试参考数据生成到当前项目中。
 
 ```powershell
-$ReferencePython = 'C:\path\to\reference\python.exe'
+$ReferencePython = 'path/to/reference/python.exe'
 
 & $ReferencePython .\tools\export_reference.py `
   --source ..\Mediapipe2Mesh `
@@ -59,14 +72,15 @@ $ReferencePython = 'C:\path\to\reference\python.exe'
 
 ### 4. 构建 MediaPipe DLL
 
-将参数替换为本机的 Python、OpenCV 和 Visual C++ 路径。
+将参数替换为本机的 Python、OpenCV、Visual C++ 和 Git Bash 路径。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File .\tools\build_mediapipe.ps1 `
-  -Python "C:\path\to\reference\python.exe" `
-  -OpenCvRoot "C:\path\to\opencv\build" `
-  -VisualCpp "C:\Program Files\Microsoft Visual Studio\2022\Community\VC"
+  -Python "path/to/reference/python.exe" `
+  -OpenCvRoot "path/to/opencv/build" `
+  -VisualCpp "path/to/Microsoft Visual Studio/2022/Community/VC" `
+  -GitBash "path/to/Git/bin/bash.exe"
 ```
 
 ### 5. 构建 Qt 程序
@@ -76,11 +90,20 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File .\tools\build.ps1 `
-  -QtRoot "C:\path\to\Qt\6.8.3\msvc2022_64" `
-  -OpenCvRoot "C:\path\to\opencv\build"
+  -QtRoot "path/to/Qt/6.8.3/msvc2022_64" `
+  -OpenCvRoot "path/to/opencv/build"
 ```
 
-构建结果位于 `bin`。
+构建结果位于 `Bin`。
+
+生成 `CMakeUserPresets.json`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\tools\configure_visual_studio.ps1 `
+  -QtRoot "path/to/Qt/6.8.3/msvc2022_64" `
+  -OpenCvRoot "path/to/opencv/build"
+```
 
 ## 运行
 
@@ -93,9 +116,9 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 也可以直接运行程序：
 
 ```powershell
-.\bin\MediaPipe2ManoQt.exe --mode viewer
-.\bin\MediaPipe2ManoQt.exe --mode interaction
-.\bin\MediaPipe2ManoQt.exe --mode parallel_ik
+.\Bin\MediaPipe2ManoQt.exe --mode viewer
+.\Bin\MediaPipe2ManoQt.exe --mode interaction
+.\Bin\MediaPipe2ManoQt.exe --mode parallel_ik
 ```
 
 完整说明见[完整项目说明](docs/README_FULL.md)。

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations"><ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration><ProjectConfiguration Include="RelWithDebInfo|x64"><Configuration>RelWithDebInfo</Configuration><Platform>x64</Platform></ProjectConfiguration></ItemGroup>
+  <PropertyGroup Label="Globals"><ProjectGuid>{10000000-0000-0000-0000-000000000003}</ProjectGuid><Keyword>MakeFileProj</Keyword><RootNamespace>parity_tests</RootNamespace></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" /><PropertyGroup Label="Configuration"><ConfigurationType>Makefile</ConfigurationType><PlatformToolset>v143</PlatformToolset></PropertyGroup><Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup><CMakeTarget>parity_tests</CMakeTarget><CMakeOutputName>parity_tests.exe</CMakeOutputName></PropertyGroup><Import Project="..\Common.CMake.props" />
+  <PropertyGroup><LocalDebuggerCommand>$(NMakeOutput)</LocalDebuggerCommand><LocalDebuggerCommandArguments>"$(ProjectRoot)"</LocalDebuggerCommandArguments><LocalDebuggerWorkingDirectory>$(ProjectRoot)</LocalDebuggerWorkingDirectory><LocalDebuggerEnvironment>PATH=$(ProjectRoot)bin;%PATH%</LocalDebuggerEnvironment></PropertyGroup>
+  <ItemGroup><ClCompile Include="..\..\tests\parity.cpp" /></ItemGroup><Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

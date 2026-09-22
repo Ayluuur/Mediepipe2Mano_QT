@@ -6,12 +6,15 @@
 /CMakeCache.txt
 /.vs/
 /.vscode/
+/CMakeUserPresets.json
+/CppProperties.json
+/vs/Local.Paths.props
 *.user
 *.user.*
 
 # 可下载的第三方依赖与编译生成的运行文件
-/deps/
-/bin/
+/ThirdParty/
+/Bin/
 /dependencies.installed.json
 
 # 由转换或准备脚本生成的模型和 MediaPipe 资源

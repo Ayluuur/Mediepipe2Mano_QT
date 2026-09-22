@@ -172,6 +172,8 @@ struct HandState {
     std::future<SolveResult> future;
     bool discard=false;
     unsigned long long resultVersion=0;
+    unsigned long long ikSubmits=0, ikCompletes=0;
+    double nextIkSubmitAt=-inf;
     std::deque<double> ikTimings;
     double meanIkSeconds() const {
         double total=0;
@@ -183,8 +185,8 @@ struct HandState {
     void beginTrack();
     void deactivate();
     Matrix update(const Detection& d, double time);
-    void collect();
-    void submit();
+    bool collect();
+    bool submit(double time=0, double maxFps=0);
     std::optional<SkeletonPose> getSkeleton(const std::string& space="camera") const;
     void updateScenePosition(const Detection& detection, double depth, int width,
                              int height, double time, std::optional<double> mmPerPixel=std::nullopt);

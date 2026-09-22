@@ -4,7 +4,7 @@
 - OpenCV：摄像头或视频读取、颜色转换、二维关键点及状态文字叠加。
 - Open3D：三维窗口和几何体更新。
 - MediaPipe：通过独立 DLL 输出手部检测结果。
-- `src/core.*`：MANO、IK、跟踪、深度和交互逻辑；`src/skeleton.cpp`：骨架位姿与场景坐标转换。
+- 根目录 `core.*`：MANO、IK、跟踪、深度和交互逻辑；`skeleton.cpp`：骨架位姿与场景坐标转换。
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {
@@ -43,10 +43,10 @@ flowchart TD
 
 | 组件 | 位置 | 功能 |
 |:---|:---|:---|
-| 程序入口 | `src/main.cpp` | 解析参数、定位项目根目录、加载模式和启动 Qt 启动器 |
-| 应用循环 | `src/application.cpp` | 加载并校验配置、采集帧、调用检测器、协调状态、更新 OpenCV/Open3D 窗口 |
-| 检测器适配 | `src/detector.cpp`、`mediapipe_bridge/` | 用 `QLibrary` 加载 DLL，通过 C ABI 调用展开后的 Hands graph |
-| 核心算法 | `src/core.cpp`、`src/core.h`、`src/skeleton.cpp` | MANO 模型、关键点到姿态、骨架、滤波、左右手身份、深度、捏合、按钮和球控制 |
+| 程序入口 | `main.cpp` | 解析参数、定位项目根目录、加载模式和启动 Qt 启动器 |
+| 应用循环 | `application.cpp` | 加载并校验配置、采集帧、调用检测器、协调状态、更新 OpenCV/Open3D 窗口 |
+| 检测器适配 | `detector.cpp`、`mediapipe_bridge/` | 用 `QLibrary` 加载 DLL，通过 C ABI 调用展开后的 Hands graph |
+| 核心算法 | `core.cpp`、`core.h`、`skeleton.cpp` | MANO 模型、关键点到姿态、骨架、滤波、左右手身份、深度、捏合、按钮和球控制 |
 | MediaPipe 资源 | `assets/` | 展开的 `hands_0_10_9.pbtxt`、TFLite 模型和资源哈希 |
 | MANO 资源 | `models/` | `MANO_LEFT.bin`、`MANO_RIGHT.bin` 及源模型哈希 |
 | 模式配置 | `configs/viewer.json`、`configs/interaction*.json`、`configs/parallel_ik*.json` | 摄像头、检测、XNNPACK/IK 并行度、跟踪、深度和交互参数 |
@@ -57,17 +57,17 @@ flowchart TD
 
 ## 2. 单帧处理顺序
 
-`runApplication()` 使用 `QTimer.start(1)` 驱动主循环。`captureWorker` 异步读取摄像头或本地视频，并完成 MediaPipe 推理。处理顺序如下：
+`runApplication()` 由 `captureWorker` 完成摄像头读取和 MediaPipe 推理，完成后通过 Qt queued invocation 把数据包投递到主线程，不再用 1 ms 定时器轮询 `future`。独立的渲染定时器只负责窗口事件和 dirty render，并根据有手/空闲状态切换频率。处理顺序如下：
 
 1. `captureWorker` 读取 BGR 帧，按 `camera.mirror` 可选镜像，再转换为 RGB。
-2. `Detector::process()` 返回每只手的 21 个归一化屏幕关键点、21 个世界关键点、左右标签和置信度；主循环取得结果后立即预取下一帧。
+2. `Detector::process()` 返回每只手的 21 个归一化屏幕关键点、21 个世界关键点、左右标签和置信度；按 `detector_fps` 或 `idle_detector_fps` 安排下一次采集。
 3. 按 `tracking.handedness_map` 修正标签，收集已完成的 IK 任务，再由 `HandednessResolver` 将检测结果关联到固定的左右 `HandState`。
 4. 用有效手掌关键点计算 `palmScale`，将手掌尺寸交给 `MultiHandDepthEstimator`，得到每只手的深度。
 5. 更新 `HandState`：`HandState::filter` 滤波世界关键点，`positionFilter` 滤波屏幕腕点；`screenTranslation()` 计算场景平移，`scenePositionFilter` 滤波场景 XY 位置。
 6. 处理交互模式的捏合状态，然后清理未观测手的待处理数据，并为每只手提交最新的异步 IK 任务。
 7. 更新小球控制、按钮碰撞和交互标记。
-8. 将 MANO 顶点转换到场景坐标，更新 Open3D 几何体并轮询窗口事件。
-9. 在 OpenCV 图像上绘制关键点、状态和性能信息，处理按键及限帧退出条件。
+8. 将 MANO 顶点转换到场景坐标；只有几何体、相机视角或交互状态变化时才标记 Open3D 场景需要重绘。
+9. 在 OpenCV 图像上绘制关键点、状态以及 timer、检测、渲染、由 IK worker 周期耗时计算的结算 FPS/配置上限，处理按键及限帧退出条件。
 
 ---
 
@@ -120,6 +120,7 @@ PCA basis、PCA mean、16×778 关节回归器、蒙皮权重、778 个模板顶
 
 - `detector.xnnpack_threads`：设置 MediaPipe graph 中两个 `InferenceCalculatorCpu` 节点各自使用的 XNNPACK 线程数。
 - `mano.jacobian_workers`：设置每只手计算 IK 数值 Jacobian 时使用的持久 C++ 工作线程数。
+- `mano.max_fps`：限制每只手 IK worker 的最高结算能力；计算提前完成时休眠到周期结束。达到提交间隔前只覆盖并保留最新关键点。界面中的 `IK solve/max FPS` 使用完整 worker 周期耗时计算。
 
 `viewer` 和 `interaction` 配置为每只手使用单批计算（`jacobian_workers=1`）：一次展开全部参数扰动的姿态，并用矩阵运算批量计算指尖形变。`parallel_ik` 配置将每只手的参数扰动分为 4 批，交给 4 个持久 C++ 工作线程，合并差分列后更新 LM。
 
@@ -201,7 +202,8 @@ raw_depth = reference_depth
 |:---|:---|:---|
 | `camera` | `index`、`width`、`height`、`mirror` | 摄像头索引、采集分辨率和是否水平翻转输入帧 |
 | `detector` | `model_complexity`、`max_hands`、`xnnpack_threads`、`min_detection_confidence`、`min_tracking_confidence` | MediaPipe 模型复杂度、最多检测手数、两个推理节点的线程数、检测阈值和跟踪阈值 |
-| `mano` | `executor`、`jacobian_workers`、`jacobian_backend`、`iterations`、`pose_smoothing` | IK 执行器、每只手的 Jacobian 并行度、后端、迭代次数和姿态平滑系数；`0` 为逐列计算，`1` 为单批计算，大于 `1` 时创建对应数量的工作线程 |
+| `performance` | `detector_fps`、`idle_detector_fps`、`render_fps`、`idle_render_fps` | 有手/空闲状态下的 MediaPipe 检测上限和 Open3D 事件/渲染上限 |
+| `mano` | `executor`、`jacobian_workers`、`jacobian_backend`、`iterations`、`pose_smoothing`、`max_fps` | IK 执行器、每只手的 Jacobian 并行度、后端、迭代次数、姿态平滑系数和 worker 结算能力上限；计算提前完成时休眠，等待期间保留最新待处理帧 |
 | `tracking` | `handedness_confirm_frames`、`handedness_map` | 左右手标签确认帧数，以及 `auto`、`direct`、`swapped` 标签映射 |
 | `tracking.position_filter` | `min_cutoff`、`beta`、`derivative_cutoff`、`median_window`、`max_speed` | 控制屏幕腕点和场景位置的平滑、限速和中值窗口 |
 | `depth_estimation` | `enabled`、`reference_depth`、`minimum_depth`、`maximum_depth`、`calibration_frames`、`min_cutoff`、`beta`、`max_speed`、`motion_gain` | 启用深度估计、设置毫米单位的参考/最小/最大深度、校准样本数以及深度滤波和运动增益 |
@@ -224,15 +226,15 @@ raw_depth = reference_depth
 或直接调用可执行文件（`--mode` 支持 `viewer`、`interaction`、`parallel_ik`）：
 
 ```powershell
-.\bin\MediaPipe2ManoQt.exe --mode viewer
-.\bin\MediaPipe2ManoQt.exe --mode interaction --config C:\path\override.json
-.\bin\MediaPipe2ManoQt.exe --mode parallel_ik --config C:\path\override.json
+.\Bin\MediaPipe2ManoQt.exe --mode viewer
+.\Bin\MediaPipe2ManoQt.exe --mode interaction --config path/to/override.json
+.\Bin\MediaPipe2ManoQt.exe --mode parallel_ik --config path/to/override.json
 ```
 
 摄像头性能测试可使用 `--benchmark-seconds`。程序在首次检测到手后开始计时，到达指定时长后自动退出并输出 `BENCHMARK_RESULT`：
 
 ```powershell
-.\bin\MediaPipe2ManoQt.exe --mode interaction `
+.\Bin\MediaPipe2ManoQt.exe --mode interaction `
   --config .\configs\interaction_4threads.json `
   --benchmark-seconds 10
 ```
@@ -240,6 +242,10 @@ raw_depth = reference_depth
 ---
 
 ## 8. 构建与部署
+
+`vs/` 保存各 CMake 目标对应的稳定
+`.vcxproj` 包装工程，根目录保存自有 C++ 源码，`ThirdParty/` 和 `mediapipe_bridge/` 保存第三方开发依赖与桥接代码，
+`Bin/` 保存可运行程序和 DLL。
 
 ### 开发环境
 
@@ -251,7 +257,7 @@ raw_depth = reference_depth
 - Git Bash，供 Bazel 构建 MediaPipe 使用。
 - Python 参考环境位于相邻项目 `..\Mediapipe2Mesh`，依赖清单为 `..\Mediapipe2Mesh\requirements.txt`；其中 MediaPipe 0.10.9、NumPy 1.24.4 和 OpenCV 4.10.0.84 已固定。
 
-Open3D 0.19.0 开发包（含 Eigen 和 TBB）及 Bazel 6.1.1 放在 `deps/`。依赖下载地址和 SHA-256 记录在 `dependencies.lock.json`。
+Open3D 0.19.0 开发包（含 Eigen 和 TBB）及 Bazel 6.1.1 放在 `ThirdParty/`。依赖下载地址和 SHA-256 记录在 `dependencies.lock.json`。
 
 ### 常规构建
 
@@ -259,16 +265,17 @@ Open3D 0.19.0 开发包（含 Eigen 和 TBB）及 Bazel 6.1.1 放在 `deps/`。�
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_mediapipe.ps1 `
-  -Python "path\to\python.exe" `
-  -OpenCvRoot "path\opencv\build" `
-  -VisualCpp "path\Microsoft Visual Studio\2022\Community\VC"
+  -Python "path/to/python.exe" `
+  -OpenCvRoot "path/to/opencv/build" `
+  -VisualCpp "path/to/Microsoft Visual Studio/2022/Community/VC" `
+  -GitBash "path/to/Git/bin/bash.exe"
 ```
 
 脚本执行以下操作：
 
 1. 用 Visual Studio CMake 生成 x64 工程。
 2. 编译 `mano_core`、`MediaPipe2ManoQt.exe` 和 4 个测试程序。
-3. 将 Open3D、TBB、OpenCV 和 Qt 运行时部署到 `bin/`。
+3. 将 Open3D、TBB、OpenCV 和 Qt 运行时部署到 `Bin/`。
 4. 执行 `parity_tests.exe`、`sync_parity_tests.exe`、`skeleton_parity_tests.exe` 和 `config_profiles_tests.exe`。
 
 CMake 目标包括 `mano_core`、`MediaPipe2ManoQt`、`parity_tests`、`sync_parity_tests`、`skeleton_parity_tests` 和 `config_profiles_tests`。已有 `build` 目录时可直接运行测试；SDK 不在脚本默认路径时，通过参数指定：
@@ -283,11 +290,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build.ps1 `
   -OpenCvRoot <OpenCvRoot>
 ```
 
-Qt Creator 可直接打开 `CMakeLists.txt`，选择 MSVC x64 Kit，并设置：
+运行一次本机配置脚本：
 
-- `CMAKE_PREFIX_PATH=<QtRoot>;<Open3DRoot>`
-- `OpenCV_DIR=<OpenCvRoot>`
-- 配置为 Release。
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\tools\configure_visual_studio.ps1 `
+  -QtRoot <QtRoot> `
+  -OpenCvRoot <OpenCvRoot>
+```
+
+脚本根据 `CMakeUserPresets.json.example` 生成 `CMakeUserPresets.json` 和
+`vs/Local.Paths.props`。
 
 ### 重建 MediaPipe DLL
 
@@ -296,12 +309,14 @@ Qt Creator 可直接打开 `CMakeLists.txt`，选择 MSVC x64 Kit，并设置：
 ```powershell
 python .\tools\install_dependencies.py
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build_mediapipe.ps1 `
-  -Python C:\path\to\reference\python.exe `
-  -OpenCvRoot D:\path\to\opencv\build
+  -Python "path/to/reference/python.exe" `
+  -OpenCvRoot "path/to/opencv/build" `
+  -VisualCpp "path/to/Microsoft Visual Studio/2022/Community/VC" `
+  -GitBash "path/to/Git/bin/bash.exe"
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build.ps1
 ```
 
-`install_dependencies.py` 将 Open3D、Bazel 和 MediaPipe 源码下载到 `deps/`，并按 lock 文件中的 SHA-256 校验下载文件。
+`install_dependencies.py` 将 Open3D、Bazel 和 MediaPipe 源码下载到 `ThirdParty/`，并按 lock 文件中的 SHA-256 校验下载文件。
 
 `build_mediapipe.ps1` 先调用 `prepare_mediapipe.py`，从 Python MediaPipe 0.10.9 包复制模型资源、展开 Hands graph 并写入 OpenCV 路径，再使用 Bazel 构建 `mediapipe_hands.dll`。
 
@@ -310,7 +325,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\build.ps1
 工具默认 Python 源码位于当前项目的相邻目录 `..\Mediapipe2Mesh`：
 
 ```powershell
-$ReferencePython = 'C:\path\to\reference\python.exe'
+$ReferencePython = 'path/to/reference/python.exe'
 & $ReferencePython .\tools\export_reference.py `
   --source ..\Mediapipe2Mesh --output .
 & $ReferencePython .\tools\export_sync_reference.py `
@@ -328,21 +343,21 @@ $ReferencePython = 'C:\path\to\reference\python.exe'
 ## 9. 文件索引
 
 ```text
-dependencies.lock.json            下载地址和 SHA-256
-src/main.cpp                      CLI、Qt 启动器和资源检查
-src/application.cpp               配置、帧循环、窗口和渲染协调
-src/core.h / src/core.cpp         核心数据结构、MANO、IK、跟踪和交互算法
-src/skeleton.cpp                  骨架位姿和场景坐标转换
-src/skeleton_json.h               骨架位姿 JSON 序列化
-src/worker.h                       持久原生任务线程
-src/detector.h / src/detector.cpp QLibrary + MediaPipe C ABI 适配
-mediapipe_bridge/                 Bazel 侧 MediaPipe C ABI 实现
-configs/*.json                    viewer、interaction、parallel_ik 及线程数变体配置
-models/*.bin                      转换后的 MANO 左右手模型
-assets/                           MediaPipe graph、TFLite 模型和哈希
-tools/build.ps1                   Qt/C++ 构建和运行时部署
-tools/build_mediapipe.ps1         MediaPipe DLL 构建
-tools/export_reference.py         MANO 转换和基础 fixture 生成
-tools/export_sync_reference.py    当前 Python fixture 和源码快照生成
-tools/export_skeleton_reference.py 骨架和 IK fixture 生成
+dependencies.lock.json                下载地址和 SHA-256
+main.cpp                              CLI、Qt 启动器和资源检查
+application.cpp                       配置、帧循环、窗口和渲染协调
+core.h / core.cpp                     核心数据结构、MANO、IK、跟踪和交互算法
+skeleton.cpp                          骨架位姿和场景坐标转换
+skeleton_json.h                       骨架位姿 JSON 序列化
+worker.h                              持久原生任务线程
+detector.h / detector.cpp             QLibrary + MediaPipe C ABI 适配
+mediapipe_bridge/                     Bazel 侧 MediaPipe C ABI 实现
+configs/*.json                        viewer、interaction、parallel_ik 及线程数变体配置
+models/*.bin                          转换后的 MANO 左右手模型
+assets/                               MediaPipe graph、TFLite 模型和哈希
+tools/build.ps1                       Qt/C++ 构建和运行时部署
+tools/build_mediapipe.ps1             MediaPipe DLL 构建
+tools/export_reference.py             MANO 转换和基础 fixture 生成
+tools/export_sync_reference.py        当前 Python fixture 和源码快照生成
+tools/export_skeleton_reference.py    骨架和 IK fixture 生成
 ```

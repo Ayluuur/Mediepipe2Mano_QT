@@ -1,0 +1,60 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "vs2022-x64",
+      "displayName": "Visual Studio 2022 x64",
+      "description": "Set QT_ROOT and OPENCV_ROOT, or create CMakeUserPresets.json from the example.",
+      "generator": "Visual Studio 17 2022",
+      "architecture": {
+        "value": "x64",
+        "strategy": "set"
+      },
+      "binaryDir": "${sourceDir}/out/build/${presetName}",
+      "cacheVariables": {
+        "BUILD_TESTING": "ON",
+        "CMAKE_PREFIX_PATH": "$env{QT_ROOT};${sourceDir}/ThirdParty/open3d-devel-windows-amd64-0.19.0",
+        "OpenCV_DIR": "$env{OPENCV_ROOT}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "vs2022-debug",
+      "displayName": "Debug",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Debug",
+      "jobs": 4
+    },
+    {
+      "name": "vs2022-relwithdebinfo",
+      "displayName": "RelWithDebInfo",
+      "configurePreset": "vs2022-x64",
+      "configuration": "RelWithDebInfo",
+      "jobs": 4
+    },
+    {
+      "name": "vs2022-release",
+      "displayName": "Release",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Release",
+      "jobs": 4
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "vs2022-tests",
+      "displayName": "Release tests",
+      "configurePreset": "vs2022-x64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

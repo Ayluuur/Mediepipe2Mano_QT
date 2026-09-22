@@ -14,7 +14,7 @@ from PIL import Image
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', type=Path, required=True)
 parser.add_argument('--gif', type=Path, required=True)
-parser.add_argument('--opencv-bin', type=Path, default=Path('D:/syl/OpenCV/opencv/build/x64/vc16/bin'))
+parser.add_argument('--opencv-bin', type=Path, default=Path('path/to/opencv/build/x64/vc16/bin'))
 args = parser.parse_args()
 root = args.root.resolve()
 gif_path = args.gif.resolve()
@@ -25,7 +25,7 @@ os.chdir(root / 'assets')
 class Hand(ct.Structure):
     _fields_ = [('side', ct.c_int32), ('score', ct.c_float), ('screen', ct.c_float * 63), ('world', ct.c_float * 63)]
 
-dll = ct.CDLL(str(root / 'bin/mediapipe_hands.dll'))
+dll = ct.CDLL(str(root / 'Bin/mediapipe_hands.dll'))
 dll.m2m_create.argtypes = [ct.c_char_p, ct.c_int, ct.c_int, ct.c_int, ct.c_float, ct.c_float, ct.c_char_p, ct.c_int]
 dll.m2m_create.restype = ct.c_void_p
 dll.m2m_process.argtypes = [ct.c_void_p, ct.c_void_p, ct.c_int, ct.c_int, ct.c_int, ct.c_int64, ct.POINTER(Hand), ct.c_int, ct.c_char_p, ct.c_int]
@@ -77,4 +77,5 @@ for complexity in (0,1):
     print(json.dumps(report),flush=True)
     assert detected>0, 'Fixture did not exercise a detected hand'
     assert worst_screen<1e-5 and worst_world<1e-6 and worst_score<1e-5, 'Detector parity tolerance exceeded'
+(root/'validation').mkdir(parents=True,exist_ok=True)
 (root/'validation/detector.json').write_text(json.dumps(reports,indent=2),encoding='utf-8')

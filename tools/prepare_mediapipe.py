@@ -14,7 +14,7 @@ parser.add_argument('--opencv', required=True)
 args = parser.parse_args()
 assert mp.__version__ == '0.10.9', 'Use the reference MediaPipe 0.10.9 environment'
 root = args.root.resolve()
-source = root / 'deps/mediapipe-0.10.9'
+source = root / 'ThirdParty/mediapipe-0.10.9'
 bridge = source / 'mediapipe/examples/qt_bridge'
 bridge.mkdir(parents=True, exist_ok=True)
 for name in ('bridge.h', 'bridge.cc', 'BUILD'):

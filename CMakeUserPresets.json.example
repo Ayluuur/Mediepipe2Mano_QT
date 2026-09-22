@@ -1,0 +1,46 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "include": [
+    "CMakePresets.json"
+  ],
+  "configurePresets": [
+    {
+      "name": "local-vs2022-x64",
+      "displayName": "Local Visual Studio 2022 x64",
+      "inherits": "vs2022-x64",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "path/to/Qt/6.8.3/msvc2022_64;${sourceDir}/ThirdParty/open3d-devel-windows-amd64-0.19.0",
+        "OpenCV_DIR": "path/to/opencv/build"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "local-release",
+      "configurePreset": "local-vs2022-x64",
+      "configuration": "Release",
+      "jobs": 4
+    },
+    {
+      "name": "local-relwithdebinfo",
+      "configurePreset": "local-vs2022-x64",
+      "configuration": "RelWithDebInfo",
+      "jobs": 4
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "local-tests",
+      "configurePreset": "local-vs2022-x64",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

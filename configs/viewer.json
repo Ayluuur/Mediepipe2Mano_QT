@@ -12,12 +12,19 @@
     "min_detection_confidence": 0.5,
     "min_tracking_confidence": 0.6
   },
+  "performance": {
+    "detector_fps": 60,
+    "idle_detector_fps": 5,
+    "render_fps": 60,
+    "idle_render_fps": 5
+  },
   "mano": {
     "executor": "thread",
     "jacobian_workers": 1,
     "jacobian_backend": "thread",
     "iterations": 5,
-    "pose_smoothing": 0.7
+    "pose_smoothing": 0.7,
+    "max_fps": 60
   },
   "tracking": {
     "handedness_confirm_frames": 5,
